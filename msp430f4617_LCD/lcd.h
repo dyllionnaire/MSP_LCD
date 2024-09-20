@@ -13,22 +13,23 @@
 #ifndef LCD_H_
 #define LCD_H_
 
-//#include <msp430.h>
+//#include <msp430f4617.h>
 #include <stdbool.h>
 
-#define NULL        0x0000
+#define NULL            0x0000
+#define MAX             7               // Maximum for LCDMEM addressability (WIP: kept at just the "7" in 7.1 segments)
 
-#define LCD_ACTL     0x0090      // LCD_A's master control register
-#define LCD_APCTL0   0x00AC      // LCD_A port 0's control register
-#define LCD_APCTL1   0x00AD      // LCD_A port 1's control register
-#define LCD_AVCTL0   0x00AE      // LCD_A voltage 0's control register
-#define LCD_AVCTL1   0x00AF      // LCD_A voltage 1's control register
+#define LCD_ACTL        0x0090          // LCD_A's master control register
+#define LCD_APCTL0      0x00AC          // LCD_A port 0's control register
+#define LCD_APCTL1      0x00AD          // LCD_A port 1's control register
+#define LCD_AVCTL0      0x00AE          // LCD_A voltage 0's control register
+#define LCD_AVCTL1      0x00AF          // LCD_A voltage 1's control register
 
-const void* BASE    = (void*)(0x0091); // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
-const void* MEMTOP  = (void*)(0x0098); // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
-const void* TOP     = (void*)(0x00A4); // Pointer to 16th memory address for LCD digits (i.e. digit 16)
+const void* BASE    = (void*)(0x0091);  // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
+const void* MEMTOP  = (void*)(0x0098);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
+const void* TOP     = (void*)(0x00A4);  // Pointer to 16th memory address for LCD digits (i.e. digit 16)
 
-//#define P5SEL extern volatile unsigned char P5SEL
+extern P5SEL;
 
 ////////////////////////////////////////////////////////////////////////////////
 /*
@@ -43,18 +44,19 @@ const void* TOP     = (void*)(0x00A4); // Pointer to 16th memory address for LCD
     NOTE:
         - There is a quasi-identifier conflict with a-f in "segment" and A-F in "number"
         - That being, the only difference between them is case-sensitivity
-        - Might be best to scope the enumeration with a struct
+        - Might be best to scope the enumeration by embedding in a struct
+        - LCDMEMx = MSB{ a - b - c - h - f - g - e - d }LSB
 */
 enum segment
 {
-    a   = 0x80,
-    b   = 0x40,
-    c   = 0x20,
-    d   = 0x01,
-    e   = 0x02,
-    f   = 0x08,
-    g   = 0x04,
-    dp  = 0x10
+    a   = 0x80,     //    aaaaa
+    b   = 0x40,     //  f       b
+    c   = 0x20,     //  f       b
+    d   = 0x01,     //    ggggg
+    e   = 0x02,     //  e       c
+    f   = 0x08,     //  e       c
+    g   = 0x04,     //    ddddd
+    dp  = 0x10      //          (dp)
 };
 typedef enum segment SEGMENT, SEG;
 
@@ -116,8 +118,12 @@ const char ERR[] =                  // Segment display pattern for : "Err"  ; us
 
 /*
     Provides a pointer to the stored segment display pattern for 0-9 and A-F(10-16 in hex)
+
+    RETURNS:
+        - "const char*" = iff the requested numeric is available
+        - "NULL"        = if the number is not in range, i.e. not represented 
 */
-const char *numSegs(enum number num)
+const char *numSegs(NUMBER num)
 {
     const static char map[] =
     {
@@ -134,12 +140,15 @@ const char *numSegs(enum number num)
         a||b||c||e||f||g,       // A = 10
         c||d||e||f||g,          // B = 11
         a||d||e||f,             // C = 12
-        b||c||d||e||g,           // D = 13
+        b||c||d||e||g,          // D = 13
         a||d||e||f||g,          // E = 14
         a||e||f||g              // F = 15
     };
 
-    return ( num>=0 && num<16) ? &(map[num]) : NULL;
+    if ( num>=0 && num<16 )
+        return NULL;
+
+    return &( map[num] );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -149,7 +158,7 @@ const char *numSegs(enum number num)
 ////////////////////////////////////////////////////////////////////////////////
 
 // Bit-field that is formatted for easy access to segments mapped for 4-MUX
-typedef struct
+struct INV_SEG
 {
    char a : 1;
    char b : 1;
@@ -159,35 +168,35 @@ typedef struct
    char g : 1;
    char e : 1;
    char d : 1;
-} INV_SEG;
-typedef union
+};
+union LCD_DIG
 {
     char    reg;
     INV_SEG seg;
-} LCD_DIG;
+};
 
-void m_all(bool, LCD_DIG*); // forward declaration to-be used by memory register initialization
+void m_all(bool, LCD_DIG*); // forward declaration to-be used by memory register declaration
 
 /*
     Maps the next available memory address for the LCD segment map to the parameterized pointer
 
-    RETURN CODES:
-        - "false"   = bad pointer argument or no more memory addresses for LCD available
+    RETURNS:
+        - "false"   = no more memory addresses for LCD available
         - "true"    = pointer parameter has been allocated a memory address and had its value cleared 
+
+    NOTES:
+        - (?) change return type to 'int' for distinct numeric error-codes, assert '0' as clean exit
 */
 bool m_init(LCD_DIG* mem)
 {
-    static short count = 0;
+    static int count = 0; // used as offset for LCDMEM address
 
-    // Ensure pointer is a valid
-    if ( !mem )
+    // Check for available addresses
+    if ( count > ( (int)TOP - (int)BASE + 1) )
         return false;
 
-    // Check for available dresses
-    if ( count > ( (int)&TOP - (int)&BASE + 1) )
-        return false;
-
-    mem = (LCD_DIG*)(BASE + count);
+    // Assert the LCDMEMx address as the LCD_DIG custom-type to provide more streamlined interfacing
+    mem = (LCD_DIG*)( (int)BASE + count++ );
 
     // According to User Guide, the initial state of the memory registers are "unchanged;" 
     // thus, they are cleared to render display blank.
@@ -201,37 +210,41 @@ bool m_init(LCD_DIG* mem)
 */
 void m_all(bool val, LCD_DIG* mem)
 {
+    if ( !mem )
+        return; // Null pointer
+
     mem->reg |= val ? 0xF : 0x0;
 }
 
 /*
     Class encapsulating the associated LCD memory address
 */
-typedef struct
+struct LCD_MEM
 {
-    LCD_DIG* mem;
+    struct LCD_DIG* mem;
 
     bool (*init)(LCD_DIG*);
     void (*all)(bool, LCD_DIG*);
-} LCD_MEM;
+};
+typedef struct LCD_MEM LCD_MEM;
 
 // Bit-field that is formatted for easy mutation of the LCD_A's control register
-typedef struct
+struct LCDACTL_BITS
 {
     char LCD_FREQx   : 3;
     char LCD_MXx     : 2;
     char LCD_SON     : 1;
     char unused     : 1;
     char LCD_ON      : 1;
-} LCDACTL_BITS;
-typedef union
+};
+union LCDACTL_REG
 {
-    char            reg;
-    LCDACTL_BITS    flag;
-} LCDACTL_REG;
+    char                    reg;
+    struct LCDACTL_BITS     flag;
+};
 
 // Bit-field for LCD_A Port 0 control register
-typedef struct
+struct LCDAPCTL0_BITS
 {
     char LCD_S28 : 1;
     char LCD_S24 : 1;
@@ -241,28 +254,30 @@ typedef struct
     char LCD_S8  : 1;
     char LCD_S4  : 1;
     char LCD_S0  : 1;
-} LCDAPCTL0_BITS;
-typedef union
+};
+union LCDAPCTL0_REG
 {
-    char            reg;
-    LCDAPCTL0_BITS  flag;
-} LCDAPCTL0_REG;
+    char                    reg;
+    struct LCDAPCTL0_BITS   flag;
+};
+typedef struct LCDAPCTL0_REG LCDAPCTL0_REG;
 
 // Bit-field for LCD_A Port 1 control register
-typedef struct
+struct LCDAPCTL1_BITS
 {
     char unused : 6;
     char LCD_S36 : 1;
     char LCD_S32 : 1;
-} LCDAPCTL1_BITS;
-typedef union
+};
+union LCDAPCTL1_REG
 {
-    char            reg;
-    LCDAPCTL1_BITS  flag;
-} LCDAPCTL1_REG;
+    char                    reg;
+    struct LCDAPCTL1_BITS   flag;
+};
+typedef struct LCDAPCTL1_REG LCDAPCTL1_REG;
 
 // Bit-field for the LCD_A Voltage 0 control register
-typedef struct
+struct LCDAVCTL0_BITS
 {
     char unused     : 1;
     char R03EXT     : 1;
@@ -271,25 +286,27 @@ typedef struct
     char LCD_CPEN    : 1;
     char VLCD_REFx   : 2;
     char LCD_2B      : 1;
-} LCDAVCTL0_BITS;
-typedef union
+};
+union LCDAVCTL0_REG
 {
-    char            reg;
-    LCDAVCTL0_BITS  flag;
-} LCDAVCTL0_REG;
+    char                    reg;
+    struct LCDAVCTL0_BITS   flag;
+};
+typedef struct LCDAVCTL0_REG LCDAVCTL0_REG;
 
 // Bit-field for the LCD_A Voltage 1 control register
-typedef struct
+struct LCDAVCTL1_BITS
 {
     char unused     : 3;
     char VLCDx      : 4;
     char unused2    : 1;
-} LCDAVCTL1_BITS;
-typedef union
+};
+union LCDAVCTL1_REG
 {
-    char            reg;
-    LCDAVCTL1_BITS  flag;
-} LCDAVCTL1_REG;
+    char                    reg;
+    struct LCDAVCTL1_BITS   flag;
+};
+typedef struct LCDAVCTL1_REG LCDAVCTL1_REG;
 
 ////////////////////////////////////////////////////////////////////////////////
 /*
@@ -313,7 +330,7 @@ typedef struct
     LCDAVCTL0_REG*    volt0;
     LCDAVCTL1_REG*    volt1;
 
-    LCD_MEM mems[8];
+    LCD_MEM mems[MAX];
 
     void (*init)(int, LCD*, LCD_MEM*);
     bool (*freq)(int, LCDACTL_REG*);
@@ -321,23 +338,23 @@ typedef struct
     bool (*segsOn)(bool, LCDACTL_REG*);
     bool (*on)(bool, LCDACTL_REG*);
     void (*all)(bool, LCD_MEM*);
-    bool (*write)(DIGIT, NUMBER, LCD_MEM*);
+    //bool (*write)(DIGIT, NUMBER, LCD_MEM*);                                                                   [[[[WIP]]]]
 } LCD;
 
-void lcd_init(unsigned short n, LCD* lcd, LCD_MEM* mems)
+void lcd_init(LCD* lcd)
 {
-    unsigned short i = 0;
-    while ( i < n )
+    unsigned int i = 0;
+    while ( i < MAX )
     {
-        mems[i].init   = &m_init;
+        lcd->mems[i].init   = &m_init;
         if ( mems[i].init(mems[i].mem) == false ) break;
 
-        mems[i].all    = &m_all;
-        mems[i].all(0, mems[i].mem);
+        lcd->mems[i].all    = &m_all;
+        lcd->mems[i].all(0, mems[i].mem);
 
         i++;
     }
-    if ( i < n ); // handle inability to allocate memory
+    if ( i < MAX ); // handle inability to allocate memory                                                      [[[[WIP]]]]
 
     lcd->ctrl    = (LCDACTL_REG*)(LCD_ACTL);
     lcd->port0   = (LCDAPCTL0_REG*)(LCD_APCTL0);
@@ -350,12 +367,12 @@ void lcd_init(unsigned short n, LCD* lcd, LCD_MEM* mems)
     lcd->segsOn = &segsOn;
     lcd->on     = &on;
     lcd->all    = &all;
-    lcd->write  = &write;
+    //lcd->write  = &write;                                                                                     [[[[WIP]]]]
 
     lcd->freq(128, lcd->ctrl);
     lcd->mux(4, lcd->ctrl);
 
-    // P5SEL |= (0x10||0x08||0x04);         // Enables the COM1-3 pins for driving the LCD (COM0 has a dedicated pin)
+    P5SEL |= (0x10||0x08||0x04);         // Enables the COM1-3 pins for driving the LCD (COM0 has a dedicated pin)
 
     // Select MSP430 port pins to function as segment pins S0-15, representing the 8/7.1 digits
     lcd->port0->flag.LCD_S0   = 1;
@@ -369,8 +386,6 @@ void lcd_init(unsigned short n, LCD* lcd, LCD_MEM* mems)
     lcd->segsOn(1, lcd->ctrl);
     lcd->on(1, lcd->ctrl);
 }
-
-static LCD lcd;
 
 bool freq(int f, LCDACTL_REG* ctrl)
 {
@@ -417,70 +432,74 @@ bool on(bool t, LCDACTL_REG* ctrl)
 
 void all(bool val, LCD_MEM* mems)
 {
-    unsigned short i = 0;
-    while ( i<8 )
+    unsigned int i = 0;
+    while ( i < MAX )
         mems[i].all(val, mems[i].mem); i++;
 }
 
-bool write(DIGIT d, NUMBER n, LCD_MEM* mems)
+/*
+    "Root" function of all overloaded write methods -any implemented write functions should invoke this function.
+
+    RETURNS:
+        - "false"   = Non-represented digit or numeric
+        - "true"    = Successful wrote numeric to LCDMEM
+    NOTES:
+        - (?) change return type to int for more characteristic error codes
+*/
+bool rwrite(DIGIT d, NUMBER n, LCD_MEM* mems)
 {
-    if ( d == ONES ); // special handling, to not affect
+    if ( d == ONES )
+        return false; // The "8th"/"'1' in '7.1'" is currently not supported
 
     mems[d-1].all(0, mems[d-1].mem);
-    mems[d-1].mem->reg = *(numSegs(n));
+    if ( mems[d-1].mem->reg = *(numSegs(n)) == NULL )
+        return false;
 
-    return 0;
+    return true;
 }
 
-bool write(const char c[], unsigned short n, MODE md, LCD_MEM* mems)
+/*
+    Mirrored "rwrite" function instance; used to distinguish "write" variants from "rwrite"
+*/
+bool (*write)(DIGIT, NUMBER, LCD_MEMS*) = &rwrite
+
+/*
+    Writes a character array of MAX length to the LCD's 7 segments.
+
+    Currently only supports characters in the ranges of:
+        - ['0','9'] = decimal digits
+        - ['A','F'] = hex digits (uppercase)
+        - ['a','f'] = hex digits (lowercase)
+    
+    RETURNS:
+        - "false"
+            = bad character array
+            = length beyond max representation
+            = unsupport character in array
+            = any "false" returns from root write function
+*/
+bool write(const unsigned char c[], unsigned int len, LCD_MEM* mems)
 {
-    unsigned short i = 0;
-    switch (md)
+    if ( len > MAX || len <= 0 || c == NULL )
+        return false;
+    
+    unsigned int index = 0;
+    while ( index < len )
     {
-        case DECIMAL:
-        case BASE10:
-            while ( i<n )
-            {
-                int num = c[ (n-i)-1 ] - 48;
+        unsigned int    cnum    = c[index];
+        DIGIT           dgt     = (DIGIT)(len - index);
+        NUMBER          num;
 
-                write((DIGIT)i, (NUMBER)num, mems); i++;
-            }
+        if      ( cnum >= 48 && cnum <= 57 )    num = (NUMBER)( cnum - 48 );        // check if indexed char is ['0','9']
+        else if ( cnum >= 65 && cnum <= 70 )    num = (NUMBER)( cnum - 65 );        // check if indexed char is ['A','F']
+        else if ( cnum >= 97 && cnum <= 102 )   num = (NUMBER)( cnum - 97 );        // check if indexed char is ['a','f']
+        else                                    return false;                       // ASCII character not printable (currently)
 
-            break;
-        case BINARY:
-        case BASE2:
-            while ( i<n )
-                write((DIGIT)i, (NUMBER)(c[ (n-i)-1 ]), mems); i++;
-
-            break;
-        case HEX:
-        case BASE16:
-            while ( i<n )
-            {
-                unsigned short index = (n-i)-1;
-
-                // Indexed character is ['0','9']
-                if ( c[index] >= 48 && c[index] <= 57 )
-                    write((DIGIT)i, (NUMBER)( c[index]-48 ), mems);
-                
-                // Indexed character is ['A','F']
-                if ( c[index] >= 65 && c[index] <= 70 )
-                    write((DIGIT)i, (NUMBER)( c[index]-65 ), mems);
-
-                // Indexed character is ['a','f']
-                if ( c[index] >= 97 && c[index] <= 102 )
-                    write((DIGIT)i, (NUMBER)( c[index]-97 ), mems);
-            
-                i++;
-            }
-
-            break;
-        default:
+        if ( !rwrite(dgt, num, mems) )
             return false;
-    }
 
-    while ( i<8 )
-        mems[i].all(0, mems[i].mem); i++;
+        i++;
+    }
 
     return true;
 }
