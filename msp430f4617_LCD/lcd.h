@@ -23,7 +23,9 @@
 #ifndef LCD_H_
 #define LCD_H_
 
-//#include <msp430f4617.h>
+#ifdef msp430f4617.h
+#include <msp430f4617.h>
+
 #include <stdbool.h>
 
 #define NULL            0x0000
@@ -37,15 +39,15 @@
     with 1-word addressing, though "uint8_t*" may be sized differently due to hardware specs and
     otherwise need changing to "(unsigned int)*"
 */
-volatile uint8_t*   LCD_ACTL    = (void*)(0x0090);  // LCD_A's master control register
-volatile uint8_t*   LCD_APCTL0  = (void*)(0x00AC);  // LCD_A port 0's control register
-volatile uint8_t*   LCD_APCTL1  = (void*)(0x00AD);  // LCD_A port 1's control register
-volatile uint8_t*   LCD_AVCTL0  = (void*)(0x00AE);  // LCD_A voltage 0's control register
-volatile uint8_t*   LCD_AVCTL1  = (void*)(0x00AF);  // LCD_A voltage 1's control register
+volatile __root uint8_t*   LCD_ACTL    = (void*)(0x0090);  // LCD_A's master control register
+volatile __root uint8_t*   LCD_APCTL0  = (void*)(0x00AC);  // LCD_A port 0's control register
+volatile __root uint8_t*   LCD_APCTL1  = (void*)(0x00AD);  // LCD_A port 1's control register
+volatile __root uint8_t*   LCD_AVCTL0  = (void*)(0x00AE);  // LCD_A voltage 0's control register
+volatile __root uint8_t*   LCD_AVCTL1  = (void*)(0x00AF);  // LCD_A voltage 1's control register
 
-volatile uint8_t*   BASE        = (void*)(0x0091);  // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
-volatile uint8_t*   MEMTOP      = (void*)(0x0098);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
-volatile uint8_t*   TOP         = (void*)(0x00A4);  // Pointer to 20th memory address for LCD digits (i.e. digit 16)
+volatile __root uint8_t*   BASE        = (void*)(0x0091);  // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
+volatile __root uint8_t*   MEMTOP      = (void*)(0x0098);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
+volatile __root uint8_t*   TOP         = (void*)(0x00A4);  // Pointer to 20th memory address for LCD digits (i.e. digit 16)
 
 extern volatile unsigned char P5SEL; // Port function select register is 1 byte, hence "char" 
 
@@ -181,30 +183,31 @@ const char *numSegs(NUMBER num)
 
 ////////////////////////////////////////////////////////////////////////////////
 /*
-                            CUSTOM-TYPES
+                            TEMPLATE-TYPES
+
+        Using bit-field templates as "stencils" for the LCDMEMs such that the
+    compiler will interpret byte- and bit-access to LCDMEM registers via the
+    access methods for bit-fields.
 */
 ////////////////////////////////////////////////////////////////////////////////
 
 // Bit-field that is formatted for easy access to segments mapped for 4-MUX
-struct INV_SEG
-{
-   unsigned char a : 1;
-   unsigned char b : 1;
-   unsigned char c : 1;
-   unsigned char h : 1;
-   unsigned char f : 1;
-   unsigned char g : 1;
-   unsigned char e : 1;
-   unsigned char d : 1;
-};
 union LCD_DIG
 {
-    unsigned char   reg;
-    INV_SEG         seg;
+    unsigned char reg;
+    struct seg
+    {
+        unsigned char d : 1;
+        unsigned char e : 1;
+        unsigned char g : 1;
+        unsigned char f : 1;
+        unsigned char h : 1;
+        unsigned char c : 1;
+        unsigned char b : 1;
+        unsigned char a : 1;
+    };
 };
 typedef union LCD_DIG LCD_DIG;
-
-void m_all(bool, LCD_MEM*); // forward declaration to-be used by memory register declaration
 
 /*
     Maps the next available memory address for the LCD segment map to the parameterized pointer
@@ -251,91 +254,87 @@ void m_all(bool val, LCD_DIG* mem)
 */
 struct LCD_MEM
 {
-    LCD_DIG* dig;
-    unsigned int id;
+    __no_init volatile LCD_DIG*     dig;
+    unsigned int                    id;
 
-    bool (*init)(LCD_MEM*);
-    void (*all)(bool, LCD_MEM*);
+    bool (*init)(LCD_MEM*)          = &m_init;
+    void (*all)(bool, LCD_MEM*)     = &m_all;
 };
 typedef struct LCD_MEM LCD_MEM;
 
 // Bit-field that is formatted for easy mutation of the LCD_A's control register
-struct LCDACTL_BITS
-{
-    unsigned char   LCD_FREQx   : 3;
-    unsigned char   LCD_MXx     : 2;
-    unsigned char   LCD_SON     : 1;
-    unsigned char   unused      : 1;
-    unsigned char   LCD_ON      : 1;
-};
 union LCDACTL_REG
 {
-    unsigned char           reg;
-    struct LCDACTL_BITS     flag;
+    unsigned char reg;
+    struct flag
+    {
+        unsigned char LCD_ON    : 1;
+        unsigned char unused    : 1;
+        unsigned char LCD_SON   : 1;
+        unsigned char LCD_MXx   : 2;
+        unsigned char LCD_FREQx : 3;
+    };
 };
+typedef union LCDACTL_REG LCDACTL_REG;
 
 // Bit-field for LCD_A Port 0 control register
-struct LCDAPCTL0_BITS
-{
-    unsigned char   LCD_S28 : 1;
-    unsigned char   LCD_S24 : 1;
-    unsigned char   LCD_S20 : 1;
-    unsigned char   LCD_S16 : 1;
-    unsigned char   LCD_S12 : 1;
-    unsigned char   LCD_S8  : 1;
-    unsigned char   LCD_S4  : 1;
-    unsigned char   LCD_S0  : 1;
-};
 union LCDAPCTL0_REG
 {
-    unsigned char           reg;
-    struct LCDAPCTL0_BITS   flag;
+    unsigned char reg;
+    struct flag
+    {
+        unsigned char LCD_S0    : 1;
+        unsigned char LCD_S4    : 1;
+        unsigned char LCD_S8    : 1;
+        unsigned char LCD_S12   : 1;
+        unsigned char LCD_S16   : 1;
+        unsigned char LCD_S20   : 1;
+        unsigned char LCD_S24   : 1;
+        unsigned char LCD_S28   : 1;      
+    };
 };
 typedef union LCDAPCTL0_REG LCDAPCTL0_REG;
 
 // Bit-field for LCD_A Port 1 control register
-struct LCDAPCTL1_BITS
-{
-    unsigned char   unused  : 6;
-    unsigned char   LCD_S36 : 1;
-    unsigned char   LCD_S32 : 1;
-};
 union LCDAPCTL1_REG
 {
-    unsigned char           reg;
-    struct LCDAPCTL1_BITS   flag;
+    unsigned char reg;
+    struct flag
+    {
+        unsigned char LCD_S32   : 1;
+        unsigned char LCD_S36   : 1;
+        unsigned char unused    : 6;
+    };
 };
 typedef union LCDAPCTL1_REG LCDAPCTL1_REG;
 
 // Bit-field for the LCD_A Voltage 0 control register
-struct LCDAVCTL0_BITS
-{
-    unsigned char   unused      : 1;
-    unsigned char   R03EXT      : 1;
-    unsigned char   REXT        : 1;
-    unsigned char   VLCD_EXT    : 1;
-    unsigned char   LCD_CPEN    : 1;
-    unsigned char   VLCD_REFx   : 2;
-    unsigned char   LCD_2B      : 1;
-};
 union LCDAVCTL0_REG
 {
-    unsigned char           reg;
-    struct LCDAVCTL0_BITS   flag;
+    unsigned char reg;
+    struct flag
+    {
+        unsigned char LCD_2B    : 1;
+        unsigned char VLCD_REFx : 2;
+        unsigned char LCD_CPEN  : 1;
+        unsigned char VLCD_EXT  : 1;
+        unsigned char REXT      : 1;
+        unsigned char R03EXT    : 1;
+        unsigned char unused    : 1;
+    };
 };
 typedef union LCDAVCTL0_REG LCDAVCTL0_REG;
 
 // Bit-field for the LCD_A Voltage 1 control register
-struct LCDAVCTL1_BITS
-{
-    unsigned char   unused      : 3;
-    unsigned char   VLCDx       : 4;
-    unsigned char   unused2     : 1;
-};
 union LCDAVCTL1_REG
 {
-    unsigned char           reg;
-    struct LCDAVCTL1_BITS   flag;
+    unsigned char reg;
+    struct flag
+    {
+        unsigned char unused    : 1;
+        unsigned char VLCD_x    : 1;
+        unsigned char unused2   : 6;
+    };
 };
 typedef union LCDAVCTL1_REG LCDAVCTL1_REG;
 
@@ -352,14 +351,19 @@ typedef union LCDAVCTL1_REG LCDAVCTL1_REG;
         Represents the integrated LCD for the MSP430, providing an instance for 
     accessing components of the LCD as well as functions which simplify the ability
     to drive the LCD without needing to know how to do so programatically.
+
+    NOTE:
+        - Initialization of structure members within a structure declaration
+            may or may not be allowed in some compilers; if so, initialize via
+            standard curly-braced list initialization.
 */
 typedef struct LCD
 {
-    LCDACTL_REG*      ctrl;
-    LCDAPCTL0_REG*    port0;
-    LCDAPCTL1_REG*    port1;
-    LCDAVCTL0_REG*    volt0;
-    LCDAVCTL1_REG*    volt1;
+    __no_init volatile  LCDACTL_REG*        ctrl;
+    __no_init volatile  LCDAPCTL0_REG*      port0;
+    __no_init volatile  LCDAPCTL1_REG*      port1;
+    __no_init volatile  LCDAVCTL0_REG*      volt0;
+    __no_init volatile  LCDAVCTL1_REG*      volt1;
 
     LCD_MEM mems[MAX];
 
@@ -381,7 +385,7 @@ typedef struct LCD
 void lcd_init()
 {
     unsigned int i = 0;
-    LCD_MEM* mems = &(lcd->mems);
+    LCD_MEM* mems = &(lcd.mems);
     while ( i < MAX )
     {
         if ( m_init( &(mems[i].mem) ) == false ) break;
@@ -393,32 +397,32 @@ void lcd_init()
 
     if ( i < MAX ); // handle inability to allocate memory                                                      [[[[WIP]]]]
 
-    lcd->ctrl    = (LCDACTL_REG*)(LCD_ACTL);
-    lcd->port0   = (LCDAPCTL0_REG*)(LCD_APCTL0);
-    lcd->port1   = (LCDAPCTL1_REG*)(LCD_APCTL1);
-    lcd->volt0   = (LCDAVCTL0_REG*)(LCD_AVCTL0);
-    lcd->volt1   = (LCDAVCTL1_REG*)(LCD_AVCTL1);                                                                                 [[[[WIP]]]]
+    lcd.ctrl    = (LCDACTL_REG*)(LCD_ACTL);
+    lcd.port0   = (LCDAPCTL0_REG*)(LCD_APCTL0);
+    lcd.port1   = (LCDAPCTL1_REG*)(LCD_APCTL1);
+    lcd.volt0   = (LCDAVCTL0_REG*)(LCD_AVCTL0);
+    lcd.volt1   = (LCDAVCTL1_REG*)(LCD_AVCTL1);                                                                                 [[[[WIP]]]]
 
-    lcd_freq(128, lcd->ctrl);
-    lcd_mux(4, lcd->ctrl);
+    lcd_freq(128);
+    lcd_mux(4);
     P5SEL |= (0x10|0x08|0x04); // Enables the COM1-3 pins for driving the LCD (COM0 has a dedicated pin)
 
     // Select MSP430 port pins to function as segment pins S0-15, representing the 8/7.1 digits
-    lcd->port0->flag.LCD_S0   = 1;
-    lcd->port0->flag.LCD_S4   = 1;
-    lcd->port0->flag.LCD_S8   = 1;
-    lcd->port0->flag.LCD_S12  = 1;
+    lcd.port0->flag.LCD_S0   = 1;
+    lcd.port0->flag.LCD_S4   = 1;
+    lcd.port0->flag.LCD_S8   = 1;
+    lcd.port0->flag.LCD_S12  = 1;
 
     // No charge pump used, default everything everything
-    lcd->volt0->reg = 0;
+    lcd.volt0->reg = 0;
 
-    lcd_segsOn(1, lcd->ctrl);
-    lcd_on(1, lcd->ctrl);
+    lcd_segsOn(1);
+    lcd_on(1);
 }
 
 bool lcd_freq(int f)
 {
-    LCDACTL_REG* ctrl = &(lcd->ctrl);
+    LCDACTL_REG* ctrl = &(lcd.ctrl);
     switch (f)
     {
         case 32:
@@ -452,18 +456,18 @@ bool lcd_freq(int f)
 }
 
 bool lcd_mux(int m)
-{ return ( m>=1 && m<4 ) ? ( lcd->ctrl->flag.LCD_MXx = (m-1) )+m : false; };
+{ return ( m>=1 && m<4 ) ? ( lcd.ctrl->flag.LCD_MXx = (m-1) )+m : false; };
 
 bool lcd_segsOn(bool t)
-{ return lcd->ctrl->flag.LCD_SON = t; };
+{ return lcd.ctrl->flag.LCD_SON = t; };
 
 bool lcd_on(bool t)
-{ return lcd->ctrl->flag.LCD_ON = t; };
+{ return lcd.ctrl->flag.LCD_ON = t; };
 
 void lcd_all(bool val)
 {
     unsigned int i = 0;
-    LCD_MEM* mems = &(lcd->mems);
+    LCD_MEM* mems = &(lcd.mems);
 
     while ( i < MAX )
         m_all( val, &(mems[i].mem) ); i++;
@@ -483,7 +487,7 @@ bool rwrite(DIGIT d, NUMBER n)
     if ( d == ONES )
         return false; // The "8th"/"'1' in '7.1'" is currently not supported
 
-    LCD_MEM* mems = &(lcd->mems);
+    LCD_MEM* mems = &(lcd.mems);
 
     mems[d-1].all(0, mems[d-1].mem);
     if ( ( mems[d-1].mem->reg = *(numSegs(n)) ) == NULL )
@@ -492,9 +496,7 @@ bool rwrite(DIGIT d, NUMBER n)
     return true;
 }
 
-/*
-    Aliased "rwrite" function instance; used to distinguish "write" variants from "rwrite"
-*/
+// Aliased "rwrite" function instance; used to distinguish "write" variants from "rwrite"
 bool (*write)(DIGIT, NUMBER) = &rwrite;
 
 /*
@@ -504,6 +506,7 @@ bool (*write)(DIGIT, NUMBER) = &rwrite;
         - ['0','9'] = decimal digits
         - ['A','F'] = hex digits (uppercase)
         - ['a','f'] = hex digits (lowercase)
+        - unsigned integers
     
     RETURNS:
         - "false"
@@ -520,7 +523,7 @@ bool write(const unsigned char c*, unsigned int len)
         return false;
     
     unsigned int index  = 0;
-    LCD_MEM* mems       = &(lcd->mems);
+    LCD_MEM* mems       = &(lcd.mems);
     while ( index < len )
     {
         unsigned int    cnum    = c[index];
@@ -540,5 +543,4 @@ bool write(const unsigned char c*, unsigned int len)
 
     return true;
 }
-
 #endif /* LCD_H_ */
