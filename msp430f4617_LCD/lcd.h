@@ -25,6 +25,7 @@
 
 #ifdef msp430f4617.h
 #include <msp430f4617.h>
+#endif
 
 #include <stdbool.h>
 
@@ -34,20 +35,16 @@
 /*
     Memory-mappings are made in accordance with the memory-mapped table found in the April 2013
     edition of the "MSP430x4xx Family User Guide," table 26-2.
-
-    "uint8_t" pointers because we have non-sign-extended and 1-byte registers, in conjunction
-    with 1-word addressing, though "uint8_t*" may be sized differently due to hardware specs and
-    otherwise need changing to "(unsigned int)*"
 */
-volatile __root uint8_t*   LCD_ACTL    = (void*)(0x0090);  // LCD_A's master control register
-volatile __root uint8_t*   LCD_APCTL0  = (void*)(0x00AC);  // LCD_A port 0's control register
-volatile __root uint8_t*   LCD_APCTL1  = (void*)(0x00AD);  // LCD_A port 1's control register
-volatile __root uint8_t*   LCD_AVCTL0  = (void*)(0x00AE);  // LCD_A voltage 0's control register
-volatile __root uint8_t*   LCD_AVCTL1  = (void*)(0x00AF);  // LCD_A voltage 1's control register
+volatile unsigned char*   LCD_ACTL    = (unsigned char*)(0x0090);  // LCD_A's master control register
+volatile unsigned char*   LCD_APCTL0  = (unsigned char*)(0x00AC);  // LCD_A port 0's control register
+volatile unsigned char*   LCD_APCTL1  = (unsigned char*)(0x00AD);  // LCD_A port 1's control register
+volatile unsigned char*   LCD_AVCTL0  = (unsigned char*)(0x00AE);  // LCD_A voltage 0's control register
+volatile unsigned char*   LCD_AVCTL1  = (unsigned char*)(0x00AF);  // LCD_A voltage 1's control register
 
-volatile __root uint8_t*   BASE        = (void*)(0x0091);  // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
-volatile __root uint8_t*   MEMTOP      = (void*)(0x0098);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
-volatile __root uint8_t*   TOP         = (void*)(0x00A4);  // Pointer to 20th memory address for LCD digits (i.e. digit 16)
+volatile unsigned char*   BASE        = (unsigned char*)(0x0091);  // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
+volatile unsigned char*   MEMTOP      = (unsigned char*)(0x0098);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
+volatile unsigned char*   TOP         = (unsigned char*)(0x00A4);  // Pointer to 20th memory address for LCD digits (i.e. digit 16)
 
 extern volatile unsigned char P5SEL; // Port function select register is 1 byte, hence "char" 
 
@@ -153,9 +150,9 @@ const char ERR[]    =                   // Segment display pattern for: "Err"   
         - "const char*" = iff the requested numeric is available
         - "NULL"        = if the number is not in range, i.e. not represented 
 */
-const char *numSegs(NUMBER num)
+const unsigned char *numSegs(NUMBER num)
 {
-    const static unsigned char map[] =
+    static const unsigned char map[] =
     {
         a|b|c|d|e|f,        // 0
         b|c,                // 1
@@ -195,7 +192,7 @@ const char *numSegs(NUMBER num)
 union LCD_DIG
 {
     unsigned char reg;
-    struct seg
+    struct segs
     {
         unsigned char d : 1;
         unsigned char e : 1;
@@ -208,6 +205,101 @@ union LCD_DIG
     };
 };
 typedef union LCD_DIG LCD_DIG;
+
+/*
+    Class encapsulating the associated LCD memory address
+*/
+struct LCD_MEM
+{
+    volatile LCD_DIG*     dig;
+    unsigned int          id;
+
+    bool (*init)(LCD_MEM*)          = &m_init;
+    void (*all)(bool, LCD_MEM*)     = &m_all;
+};
+typedef struct LCD_MEM LCD_MEM;
+
+// Bit-field that is formatted for easy mutation of the LCD_A's control register
+union LCDACTL_REG
+{
+    unsigned char reg;
+    struct
+    {
+        unsigned char LCD_ON    : 1;
+        unsigned char unused    : 1;
+        unsigned char LCD_SON   : 1;
+        unsigned char LCD_MXx   : 2;
+        unsigned char LCD_FREQx : 3;
+    } flags;
+};
+typedef union LCDACTL_REG LCDACTL_REG;
+
+// Bit-field for LCD_A Port 0 control register
+union LCDAPCTL0_REG
+{
+    unsigned char reg;
+    struct
+    {
+        unsigned char LCD_S0    : 1;
+        unsigned char LCD_S4    : 1;
+        unsigned char LCD_S8    : 1;
+        unsigned char LCD_S12   : 1;
+        unsigned char LCD_S16   : 1;
+        unsigned char LCD_S20   : 1;
+        unsigned char LCD_S24   : 1;
+        unsigned char LCD_S28   : 1;      
+    } flags;
+};
+typedef union LCDAPCTL0_REG LCDAPCTL0_REG;
+
+// Bit-field for LCD_A Port 1 control register
+union LCDAPCTL1_REG
+{
+    unsigned char reg;
+    struct
+    {
+        unsigned char LCD_S32   : 1;
+        unsigned char LCD_S36   : 1;
+        unsigned char unused    : 6;
+    } flags;
+};
+typedef union LCDAPCTL1_REG LCDAPCTL1_REG;
+
+// Bit-field for the LCD_A Voltage 0 control register
+union LCDAVCTL0_REG
+{
+    unsigned char reg;
+    struct
+    {
+        unsigned char LCD_2B    : 1;
+        unsigned char VLCD_REFx : 2;
+        unsigned char LCD_CPEN  : 1;
+        unsigned char VLCD_EXT  : 1;
+        unsigned char REXT      : 1;
+        unsigned char R03EXT    : 1;
+        unsigned char unused    : 1;
+    } flags;
+};
+typedef union LCDAVCTL0_REG LCDAVCTL0_REG;
+
+// Bit-field for the LCD_A Voltage 1 control register
+union LCDAVCTL1_REG
+{
+    unsigned char reg;
+    struct
+    {
+        unsigned char unused    : 1;
+        unsigned char VLCD_x    : 1;
+        unsigned char unused2   : 6;
+    } flags;
+};
+typedef union LCDAVCTL1_REG LCDAVCTL1_REG;
+
+////////////////////////////////////////////////////////////////////////////////
+/*
+                            LCD OBJECT
+*/
+////////////////////////////////////////////////////////////////////////////////
 
 /*
     Maps the next available memory address for the LCD segment map to the parameterized pointer
@@ -241,109 +333,13 @@ bool m_init(LCD_MEM* mem)
 /*
     Asserts that all segments at a memory address are either set or cleared
 */
-void m_all(bool val, LCD_DIG* mem)
+void m_all(bool val, LCD_MEM* mem)
 {
     if ( !mem )
         return; // Null pointer
 
     mem->dig->reg |= val ? 0xFF : 0x00;
 }
-
-/*
-    Class encapsulating the associated LCD memory address
-*/
-struct LCD_MEM
-{
-    __no_init volatile LCD_DIG*     dig;
-    unsigned int                    id;
-
-    bool (*init)(LCD_MEM*)          = &m_init;
-    void (*all)(bool, LCD_MEM*)     = &m_all;
-};
-typedef struct LCD_MEM LCD_MEM;
-
-// Bit-field that is formatted for easy mutation of the LCD_A's control register
-union LCDACTL_REG
-{
-    unsigned char reg;
-    struct flag
-    {
-        unsigned char LCD_ON    : 1;
-        unsigned char unused    : 1;
-        unsigned char LCD_SON   : 1;
-        unsigned char LCD_MXx   : 2;
-        unsigned char LCD_FREQx : 3;
-    };
-};
-typedef union LCDACTL_REG LCDACTL_REG;
-
-// Bit-field for LCD_A Port 0 control register
-union LCDAPCTL0_REG
-{
-    unsigned char reg;
-    struct flag
-    {
-        unsigned char LCD_S0    : 1;
-        unsigned char LCD_S4    : 1;
-        unsigned char LCD_S8    : 1;
-        unsigned char LCD_S12   : 1;
-        unsigned char LCD_S16   : 1;
-        unsigned char LCD_S20   : 1;
-        unsigned char LCD_S24   : 1;
-        unsigned char LCD_S28   : 1;      
-    };
-};
-typedef union LCDAPCTL0_REG LCDAPCTL0_REG;
-
-// Bit-field for LCD_A Port 1 control register
-union LCDAPCTL1_REG
-{
-    unsigned char reg;
-    struct flag
-    {
-        unsigned char LCD_S32   : 1;
-        unsigned char LCD_S36   : 1;
-        unsigned char unused    : 6;
-    };
-};
-typedef union LCDAPCTL1_REG LCDAPCTL1_REG;
-
-// Bit-field for the LCD_A Voltage 0 control register
-union LCDAVCTL0_REG
-{
-    unsigned char reg;
-    struct flag
-    {
-        unsigned char LCD_2B    : 1;
-        unsigned char VLCD_REFx : 2;
-        unsigned char LCD_CPEN  : 1;
-        unsigned char VLCD_EXT  : 1;
-        unsigned char REXT      : 1;
-        unsigned char R03EXT    : 1;
-        unsigned char unused    : 1;
-    };
-};
-typedef union LCDAVCTL0_REG LCDAVCTL0_REG;
-
-// Bit-field for the LCD_A Voltage 1 control register
-union LCDAVCTL1_REG
-{
-    unsigned char reg;
-    struct flag
-    {
-        unsigned char unused    : 1;
-        unsigned char VLCD_x    : 1;
-        unsigned char unused2   : 6;
-    };
-};
-typedef union LCDAVCTL1_REG LCDAVCTL1_REG;
-
-////////////////////////////////////////////////////////////////////////////////
-/*
-                            LCD OBJECT
-*/
-////////////////////////////////////////////////////////////////////////////////
-
 
 /*
     LCD CLASS
@@ -357,13 +353,13 @@ typedef union LCDAVCTL1_REG LCDAVCTL1_REG;
             may or may not be allowed in some compilers; if so, initialize via
             standard curly-braced list initialization.
 */
-typedef struct LCD
+struct LCD
 {
-    __no_init volatile  LCDACTL_REG*        ctrl;
-    __no_init volatile  LCDAPCTL0_REG*      port0;
-    __no_init volatile  LCDAPCTL1_REG*      port1;
-    __no_init volatile  LCDAVCTL0_REG*      volt0;
-    __no_init volatile  LCDAVCTL1_REG*      volt1;
+    volatile  LCDACTL_REG*        ctrl;
+    volatile  LCDAPCTL0_REG*      port0;
+    volatile  LCDAPCTL1_REG*      port1;
+    volatile  LCDAVCTL0_REG*      volt0;
+    volatile  LCDAVCTL1_REG*      volt1;
 
     LCD_MEM mems[MAX];
 
@@ -375,43 +371,38 @@ typedef struct LCD
     void (*all)(bool)       = &lcd_all;
 
     bool (*write)(DIGIT, NUMBER)    = &rwrite;
-    bool (*write)
-        (
-            const unsigned char*,
-            unsigned int
-        )                           = &write;
 } lcd;
 
 void lcd_init()
 {
     unsigned int i = 0;
-    LCD_MEM* mems = &(lcd.mems);
+    LCD_MEM* mems = lcd.mems;
     while ( i < MAX )
     {
-        if ( m_init( &(mems[i].mem) ) == false ) break;
+        if ( m_init( &(mems[i]) ) == false ) break;
 
-        m_all( 0, &(mems[i].mem) );
+        m_all( 0, &(mems[i]) );
 
         i++;
     }
 
-    if ( i < MAX ); // handle inability to allocate memory                                                      [[[[WIP]]]]
+    if ( i < MAX ); // handle inability to allocate memory                                                      
 
     lcd.ctrl    = (LCDACTL_REG*)(LCD_ACTL);
     lcd.port0   = (LCDAPCTL0_REG*)(LCD_APCTL0);
     lcd.port1   = (LCDAPCTL1_REG*)(LCD_APCTL1);
     lcd.volt0   = (LCDAVCTL0_REG*)(LCD_AVCTL0);
-    lcd.volt1   = (LCDAVCTL1_REG*)(LCD_AVCTL1);                                                                                 [[[[WIP]]]]
+    lcd.volt1   = (LCDAVCTL1_REG*)(LCD_AVCTL1);                                                                                
 
     lcd_freq(128);
     lcd_mux(4);
     P5SEL |= (0x10|0x08|0x04); // Enables the COM1-3 pins for driving the LCD (COM0 has a dedicated pin)
 
     // Select MSP430 port pins to function as segment pins S0-15, representing the 8/7.1 digits
-    lcd.port0->flag.LCD_S0   = 1;
-    lcd.port0->flag.LCD_S4   = 1;
-    lcd.port0->flag.LCD_S8   = 1;
-    lcd.port0->flag.LCD_S12  = 1;
+    lcd.port0->flags.LCD_S0   = 1;
+    lcd.port0->flags.LCD_S4   = 1;
+    lcd.port0->flags.LCD_S8   = 1;
+    lcd.port0->flags.LCD_S12  = 1;
 
     // No charge pump used, default everything everything
     lcd.volt0->reg = 0;
@@ -422,32 +413,32 @@ void lcd_init()
 
 bool lcd_freq(int f)
 {
-    LCDACTL_REG* ctrl = &(lcd.ctrl);
+    volatile LCDACTL_REG* ctrl = lcd.ctrl;
     switch (f)
     {
         case 32:
-            ctrl->flag.LCD_FREQx = 0b000;
+            ctrl->flags.LCD_FREQx = 0b000;
             break;
         case 64:
-            ctrl->flag.LCD_FREQx = 0b001;
+            ctrl->flags.LCD_FREQx = 0b001;
             break;
         case 96:
-            ctrl->flag.LCD_FREQx = 0b010;
+            ctrl->flags.LCD_FREQx = 0b010;
             break;
         case 128:
-            ctrl->flag.LCD_FREQx = 0b011;
+            ctrl->flags.LCD_FREQx = 0b011;
             break;
         case 192:
-            ctrl->flag.LCD_FREQx = 0b100;
+            ctrl->flags.LCD_FREQx = 0b100;
             break;
         case 256:
-            ctrl->flag.LCD_FREQx = 0b101;
+            ctrl->flags.LCD_FREQx = 0b101;
             break;
         case 384:
-            ctrl->flag.LCD_FREQx = 0b110;
+            ctrl->flags.LCD_FREQx = 0b110;
             break;
         case 512:
-            ctrl->flag.LCD_FREQx = 0b111;
+            ctrl->flags.LCD_FREQx = 0b111;
             break;
         default:
             return false;
@@ -456,21 +447,21 @@ bool lcd_freq(int f)
 }
 
 bool lcd_mux(int m)
-{ return ( m>=1 && m<4 ) ? ( lcd.ctrl->flag.LCD_MXx = (m-1) )+m : false; };
+{ return ( m>=1 && m<4 ) ? ( lcd.ctrl->flags.LCD_MXx = (m-1) )+m : false; };
 
 bool lcd_segsOn(bool t)
-{ return lcd.ctrl->flag.LCD_SON = t; };
+{ return lcd.ctrl->flags.LCD_SON = t; };
 
 bool lcd_on(bool t)
-{ return lcd.ctrl->flag.LCD_ON = t; };
+{ return lcd.ctrl->flags.LCD_ON = t; };
 
 void lcd_all(bool val)
 {
     unsigned int i = 0;
-    LCD_MEM* mems = &(lcd.mems);
+    LCD_MEM* mems = lcd.mems;
 
     while ( i < MAX )
-        m_all( val, &(mems[i].mem) ); i++;
+        m_all( val, &(mems[i]) ); i++;
 }
 
 /*
@@ -487,10 +478,10 @@ bool rwrite(DIGIT d, NUMBER n)
     if ( d == ONES )
         return false; // The "8th"/"'1' in '7.1'" is currently not supported
 
-    LCD_MEM* mems = &(lcd.mems);
+    LCD_MEM* mems = lcd.mems;
 
-    mems[d-1].all(0, mems[d-1].mem);
-    if ( ( mems[d-1].mem->reg = *(numSegs(n)) ) == NULL )
+    mems[d-1].all( 0, &(mems[d-1]) );
+    if ( ( mems[d-1].dig->reg = *(numSegs(n)) ) == NULL )
         return false;
 
     return true;
@@ -517,13 +508,13 @@ bool (*write)(DIGIT, NUMBER) = &rwrite;
 
         - "true" = character successfully written
 */
-bool write(const unsigned char c*, unsigned int len)
+bool write(const unsigned char* c, unsigned int len)
 {
     if ( len > MAX || len <= 0 || c == NULL )
         return false;
     
     unsigned int index  = 0;
-    LCD_MEM* mems       = &(lcd.mems);
+    LCD_MEM* mems       = lcd.mems;
     while ( index < len )
     {
         unsigned int    cnum    = c[index];
@@ -535,7 +526,7 @@ bool write(const unsigned char c*, unsigned int len)
         else if ( cnum >= 97 && cnum <= 102 )   num = (NUMBER)( cnum - 97 );        // check if indexed char is ['a','f']
         else                                    return false;                       // ASCII character not printable (currently)
 
-        if ( !rwrite(dgt, num, mems) )
+        if ( !rwrite(dgt, num) )
             return false;
 
         index++;
@@ -543,4 +534,5 @@ bool write(const unsigned char c*, unsigned int len)
 
     return true;
 }
+
 #endif /* LCD_H_ */
