@@ -19,17 +19,25 @@
 #define NULL            0x0000
 #define MAX             7               // Maximum for LCDMEM addressability (WIP: kept at just the "7" in 7.1 segments)
 
-#define LCD_ACTL        0x0090          // LCD_A's master control register
-#define LCD_APCTL0      0x00AC          // LCD_A port 0's control register
-#define LCD_APCTL1      0x00AD          // LCD_A port 1's control register
-#define LCD_AVCTL0      0x00AE          // LCD_A voltage 0's control register
-#define LCD_AVCTL1      0x00AF          // LCD_A voltage 1's control register
+/*
+    Memory-mappings are made in accordance with the memory-mapped table found in the April 2013
+    edition of the "MSP430x4xx Family User Guide," table 26-2.
 
-const void* BASE    = (void*)(0x0091);  // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
-const void* MEMTOP  = (void*)(0x0098);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
-const void* TOP     = (void*)(0x00A4);  // Pointer to 16th memory address for LCD digits (i.e. digit 16)
+    "uint8_t" pointers because we have non-sign-extended and 1-byte registers, in conjunction
+    with 1-word addressing, though "uint8_t*" may be sized differently due to hardware specs and
+    otherwise need changing to "(unsigned int)*"
+*/
+volatile uint8_t*   LCD_ACTL    = (void*)(0x0090);  // LCD_A's master control register
+volatile uint8_t*   LCD_APCTL0  = (void*)(0x00AC);  // LCD_A port 0's control register
+volatile uint8_t*   LCD_APCTL1  = (void*)(0x00AD);  // LCD_A port 1's control register
+volatile uint8_t*   LCD_AVCTL0  = (void*)(0x00AE);  // LCD_A voltage 0's control register
+volatile uint8_t*   LCD_AVCTL1  = (void*)(0x00AF);  // LCD_A voltage 1's control register
 
-extern P5SEL;
+volatile uint8_t*   BASE        = (void*)(0x0091);  // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
+volatile uint8_t*   MEMTOP      = (void*)(0x0098);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
+volatile uint8_t*   TOP         = (void*)(0x00A4);  // Pointer to 20th memory address for LCD digits (i.e. digit 16)
+
+extern volatile unsigned char P5SEL; // Port function select register is 1 byte, hence "char" 
 
 ////////////////////////////////////////////////////////////////////////////////
 /*
@@ -95,6 +103,13 @@ enum number
 };
 typedef enum number NUMBER, NUM;
 
+/*
+    Used in parsing functions to dictate current input format and/or conversions-to
+
+    NOTE:
+        - (?) can use diff. enum identifier for same value (e.g. DECIMAL=0; BASE10=0;).
+            However, I do not know if the CCS compiler would like this.
+*/
 enum mode
 {
     DECIMAL,
@@ -117,7 +132,9 @@ const char ERR[] =                  // Segment display pattern for : "Err"  ; us
 };
 
 /*
-    Provides a pointer to the stored segment display pattern for 0-9 and A-F(10-16 in hex)
+    Provides a pointer to the stored segment display pattern for 0-9 and A-F(10-16 in hex).
+    Wrapper function to ensure that programmer cannot corrupt segment pattern via their own
+    code.
 
     RETURNS:
         - "const char*" = iff the requested numeric is available
@@ -125,27 +142,27 @@ const char ERR[] =                  // Segment display pattern for : "Err"  ; us
 */
 const char *numSegs(NUMBER num)
 {
-    const static char map[] =
+    const static unsigned char map[] =
     {
-        a||b||c||d||e||f,       // 0
-        b||c,                   // 1
-        a||b||d||e||g,          // 2
-        a||b||c||d||g,          // 3
-        b||c||f||g,             // 4
-        a||c||d||f||g,          // 5
-        a||c||d||e||f||g,       // 6
-        a||b||c,                // 7
-        a||b||c||d||e||f||g,    // 8
-        a||b||c||d||f||g,       // 9
-        a||b||c||e||f||g,       // A = 10
-        c||d||e||f||g,          // B = 11
-        a||d||e||f,             // C = 12
-        b||c||d||e||g,          // D = 13
-        a||d||e||f||g,          // E = 14
-        a||e||f||g              // F = 15
+        a|b|c|d|e|f,        // 0
+        b|c,                // 1
+        a|b|d|e|g,          // 2
+        a|b|c|d|g,          // 3
+        b|c|f|g,            // 4
+        a|c|d|f|g,          // 5
+        a|c|d|e|f|g,        // 6
+        a|b|c,              // 7
+        a|b|c|d|e|f|g,      // 8
+        a|b|c|d|f|g,        // 9
+        a|b|c|e|f|g,        // A = 10
+        c|d|e|f|g,          // B = 11
+        a|d|e|f,            // C = 12
+        b|c|d|e|g,          // D = 13
+        a|d|e|f|g,          // E = 14
+        a|e|f|g             // F = 15
     };
 
-    if ( num>=0 && num<16 )
+    if ( num<0 || num>=16 )
         return NULL;
 
     return &( map[num] );
@@ -160,20 +177,21 @@ const char *numSegs(NUMBER num)
 // Bit-field that is formatted for easy access to segments mapped for 4-MUX
 struct INV_SEG
 {
-   char a : 1;
-   char b : 1;
-   char c : 1;
-   char h : 1;
-   char f : 1;
-   char g : 1;
-   char e : 1;
-   char d : 1;
+   unsigned char a : 1;
+   unsigned char b : 1;
+   unsigned char c : 1;
+   unsigned char h : 1;
+   unsigned char f : 1;
+   unsigned char g : 1;
+   unsigned char e : 1;
+   unsigned char d : 1;
 };
 union LCD_DIG
 {
-    char    reg;
-    INV_SEG seg;
+    unsigned char   reg;
+    INV_SEG         seg;
 };
+typedef union LCD_DIG LCD_DIG;
 
 void m_all(bool, LCD_DIG*); // forward declaration to-be used by memory register declaration
 
@@ -189,14 +207,14 @@ void m_all(bool, LCD_DIG*); // forward declaration to-be used by memory register
 */
 bool m_init(LCD_DIG* mem)
 {
-    static int count = 0; // used as offset for LCDMEM address
+    static unsigned int count = 0; // used as offset for LCDMEM address
 
-    // Check for available addresses
-    if ( count > ( (int)TOP - (int)BASE + 1) )
+    // Check for available addresses (cannot exceed 20)
+    if ( count >= ( (TOP - BASE) + 1) )
         return false;
 
     // Assert the LCDMEMx address as the LCD_DIG custom-type to provide more streamlined interfacing
-    mem = (LCD_DIG*)( (int)BASE + count++ );
+    mem = (LCD_DIG*)( BASE + count++ );
 
     // According to User Guide, the initial state of the memory registers are "unchanged;" 
     // thus, they are cleared to render display blank.
@@ -221,7 +239,7 @@ void m_all(bool val, LCD_DIG* mem)
 */
 struct LCD_MEM
 {
-    struct LCD_DIG* mem;
+    LCD_DIG* mem;
 
     bool (*init)(LCD_DIG*);
     void (*all)(bool, LCD_DIG*);
@@ -231,82 +249,82 @@ typedef struct LCD_MEM LCD_MEM;
 // Bit-field that is formatted for easy mutation of the LCD_A's control register
 struct LCDACTL_BITS
 {
-    char LCD_FREQx   : 3;
-    char LCD_MXx     : 2;
-    char LCD_SON     : 1;
-    char unused     : 1;
-    char LCD_ON      : 1;
+    unsigned char   LCD_FREQx   : 3;
+    unsigned char   LCD_MXx     : 2;
+    unsigned char   LCD_SON     : 1;
+    unsigned char   unused      : 1;
+    unsigned char   LCD_ON      : 1;
 };
 union LCDACTL_REG
 {
-    char                    reg;
+    unsigned char           reg;
     struct LCDACTL_BITS     flag;
 };
 
 // Bit-field for LCD_A Port 0 control register
 struct LCDAPCTL0_BITS
 {
-    char LCD_S28 : 1;
-    char LCD_S24 : 1;
-    char LCD_S20 : 1;
-    char LCD_S16 : 1;
-    char LCD_S12 : 1;
-    char LCD_S8  : 1;
-    char LCD_S4  : 1;
-    char LCD_S0  : 1;
+    unsigned char   LCD_S28 : 1;
+    unsigned char   LCD_S24 : 1;
+    unsigned char   LCD_S20 : 1;
+    unsigned char   LCD_S16 : 1;
+    unsigned char   LCD_S12 : 1;
+    unsigned char   LCD_S8  : 1;
+    unsigned char   LCD_S4  : 1;
+    unsigned char   LCD_S0  : 1;
 };
 union LCDAPCTL0_REG
 {
-    char                    reg;
+    unsigned char           reg;
     struct LCDAPCTL0_BITS   flag;
 };
-typedef struct LCDAPCTL0_REG LCDAPCTL0_REG;
+typedef union LCDAPCTL0_REG LCDAPCTL0_REG;
 
 // Bit-field for LCD_A Port 1 control register
 struct LCDAPCTL1_BITS
 {
-    char unused : 6;
-    char LCD_S36 : 1;
-    char LCD_S32 : 1;
+    unsigned char   unused  : 6;
+    unsigned char   LCD_S36 : 1;
+    unsigned char   LCD_S32 : 1;
 };
 union LCDAPCTL1_REG
 {
-    char                    reg;
+    unsigned char           reg;
     struct LCDAPCTL1_BITS   flag;
 };
-typedef struct LCDAPCTL1_REG LCDAPCTL1_REG;
+typedef union LCDAPCTL1_REG LCDAPCTL1_REG;
 
 // Bit-field for the LCD_A Voltage 0 control register
 struct LCDAVCTL0_BITS
 {
-    char unused     : 1;
-    char R03EXT     : 1;
-    char REXT       : 1;
-    char VLCD_EXT    : 1;
-    char LCD_CPEN    : 1;
-    char VLCD_REFx   : 2;
-    char LCD_2B      : 1;
+    unsigned char   unused      : 1;
+    unsigned char   R03EXT      : 1;
+    unsigned char   REXT        : 1;
+    unsigned char   VLCD_EXT    : 1;
+    unsigned char   LCD_CPEN    : 1;
+    unsigned char   VLCD_REFx   : 2;
+    unsigned char   LCD_2B      : 1;
 };
 union LCDAVCTL0_REG
 {
-    char                    reg;
+    unsigned char           reg;
     struct LCDAVCTL0_BITS   flag;
 };
-typedef struct LCDAVCTL0_REG LCDAVCTL0_REG;
+typedef union LCDAVCTL0_REG LCDAVCTL0_REG;
 
 // Bit-field for the LCD_A Voltage 1 control register
 struct LCDAVCTL1_BITS
 {
-    char unused     : 3;
-    char VLCDx      : 4;
-    char unused2    : 1;
+    unsigned char   unused      : 3;
+    unsigned char   VLCDx       : 4;
+    unsigned char   unused2     : 1;
 };
 union LCDAVCTL1_REG
 {
-    char                    reg;
+    unsigned char           reg;
     struct LCDAVCTL1_BITS   flag;
 };
-typedef struct LCDAVCTL1_REG LCDAVCTL1_REG;
+typedef union LCDAVCTL1_REG LCDAVCTL1_REG;
 
 ////////////////////////////////////////////////////////////////////////////////
 /*
@@ -330,7 +348,7 @@ typedef struct
     LCDAVCTL0_REG*    volt0;
     LCDAVCTL1_REG*    volt1;
 
-    LCD_MEM mems[MAX];
+    LCD_MEM* mems[MAX];
 
     void (*init)(int, LCD*, LCD_MEM*);
     bool (*freq)(int, LCDACTL_REG*);
@@ -338,7 +356,7 @@ typedef struct
     bool (*segsOn)(bool, LCDACTL_REG*);
     bool (*on)(bool, LCDACTL_REG*);
     void (*all)(bool, LCD_MEM*);
-    //bool (*write)(DIGIT, NUMBER, LCD_MEM*);                                                                   [[[[WIP]]]]
+    //bool (*write)(DIGIT, NUMBER, LCD_MEM*)                                                                   [[[[WIP]]]]
 } LCD;
 
 void lcd_init(LCD* lcd)
@@ -347,10 +365,10 @@ void lcd_init(LCD* lcd)
     while ( i < MAX )
     {
         lcd->mems[i].init   = &m_init;
-        if ( mems[i].init(mems[i].mem) == false ) break;
+        if ( lcd->mems[i].init(lcd->mems[i].mem) == false ) break;
 
         lcd->mems[i].all    = &m_all;
-        lcd->mems[i].all(0, mems[i].mem);
+        lcd->mems[i].all(0, lcd->mems[i].mem);
 
         i++;
     }
@@ -372,7 +390,7 @@ void lcd_init(LCD* lcd)
     lcd->freq(128, lcd->ctrl);
     lcd->mux(4, lcd->ctrl);
 
-    P5SEL |= (0x10||0x08||0x04);         // Enables the COM1-3 pins for driving the LCD (COM0 has a dedicated pin)
+    P5SEL |= (0x10|0x08|0x04); // Enables the COM1-3 pins for driving the LCD (COM0 has a dedicated pin)
 
     // Select MSP430 port pins to function as segment pins S0-15, representing the 8/7.1 digits
     lcd->port0->flag.LCD_S0   = 1;
@@ -461,7 +479,7 @@ bool rwrite(DIGIT d, NUMBER n, LCD_MEM* mems)
 /*
     Mirrored "rwrite" function instance; used to distinguish "write" variants from "rwrite"
 */
-bool (*write)(DIGIT, NUMBER, LCD_MEMS*) = &rwrite
+bool (*write)(DIGIT, NUMBER, LCD_MEM*) = &rwrite;
 
 /*
     Writes a character array of MAX length to the LCD's 7 segments.
@@ -477,6 +495,8 @@ bool (*write)(DIGIT, NUMBER, LCD_MEMS*) = &rwrite
             = length beyond max representation
             = unsupport character in array
             = any "false" returns from root write function
+
+        - "true" = character successfully written
 */
 bool write(const unsigned char c[], unsigned int len, LCD_MEM* mems)
 {
@@ -498,7 +518,7 @@ bool write(const unsigned char c[], unsigned int len, LCD_MEM* mems)
         if ( !rwrite(dgt, num, mems) )
             return false;
 
-        i++;
+        index++;
     }
 
     return true;
