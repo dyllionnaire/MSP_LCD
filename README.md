@@ -10,7 +10,7 @@ In its current iteration, the only supported display characters are unsigned num
 -and only for the first 7 digits (those corresponding to the 7.1 segment portion of the LCD). 
 
 Additionally, the only display configuration currently supported for the four MUX modes is the 4-MUX; however, given 
-the precedent set by the LCDMEM register data type as a pointer to the address thereof with a bit field of the memory 
+the precedent set by the LCDMEM register data type as a pointer to the known address with a bit field of the memory 
 scheme as its type and some type checking and appriopriate address allocation in m_init, the multimode arrangement 
 could be achieved.
 
