@@ -2,8 +2,11 @@
 A wrapper object for driving the on-board LCD (limited to the 7.1 segment display) for the TI MSP430FG461x series MCUs.
 
 In its current iteration, the only supported display characters are unsigned numerics:
+
   DECIMAL   = [0,9]
+  
   HEX       = [A,F] + [a,f]
+  
 -and only for the first 7 digits (those corresponding to the 7.1 segment portion of the LCD). 
 
 Additionally, the only display configuration currently supported for the four MUX modes is the 4-MUX; however, given 
