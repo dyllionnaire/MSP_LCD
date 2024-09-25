@@ -1,9 +1,5 @@
-#ifdef msp430.h
 #include <msp430.h>
-#endif 
 #include <lcd.h>
-
-extern WDTCTL, WDTPW, WDTHOLD;
 
 /**
  * main.c
@@ -13,23 +9,32 @@ int main(void)
 	WDTCTL = WDTPW | WDTHOLD;	// stop watchdog timer
 
 	/*
-		TEST 1: configuration
-			- should display all segments across all digits
+		While not explicitly checked, this function MUST ABSOLUTELY
+		be invoked before any of the following functionality can be
+		used.
+
+		This function enables the on-board LCD for limited use of
+		the 7 segments in the 7.1 display region of unsigned
+		integers, represented in decimal or hex.
+
+		By default, it is set to 30Hz FPS at a 1/3 voltage bias.
+
+		NOTE: the wrapper is configured to support 4-MUX ONLY; any
+		attempt to configure to other modes will not be internally
+		supported.
 	*/
 	lcd_init();
-	lcd_all(1,1,15);
 
-	/*
-		TEST 2: root write
-			- able to write a "0" to 1st digit
-	*/
-	rwrite( (DIGIT)(1), (NUMBER)(0) );
+	lcd_segsOn(0);
+	lcd_all(1,1,MAX);
+	lcd_segsOn(1);
 
-	/*
-		TEST 3: character write
-			- should display "12345" that are right-aligned to LCD segments 1-5.
-	*/
-	write( "12345", 5);
+	lcd_segsOn(0);
+	lcd_all(0,1,MAX);
+	rwrite( (DIGIT)3 , (NUMBER)5 );
+	lcd_segsOn(1);
+
+	write( "12345", 5 );
 
 	return 0;
 }

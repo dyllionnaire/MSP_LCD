@@ -38,8 +38,8 @@ volatile unsigned char*   LCD_APCTL1  = (unsigned char*)(0x00AD);  // LCD_A port
 volatile unsigned char*   LCD_AVCTL0  = (unsigned char*)(0x00AE);  // LCD_A voltage 0's control register
 volatile unsigned char*   LCD_AVCTL1  = (unsigned char*)(0x00AF);  // LCD_A voltage 1's control register
 
-volatile unsigned char*   BASE        = (unsigned char*)(0x0091);  // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
-volatile unsigned char*   MEMTOP      = (unsigned char*)(0x009F);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
+volatile unsigned char*   BASE        = (unsigned char*)(0x0093);  // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
+volatile unsigned char*   MEMTOP      = (unsigned char*)(0x009A);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
 volatile unsigned char*   TOP         = (unsigned char*)(0x00A4);  // Pointer to 20th memory address for LCD digits (i.e. digit 16)
 
 extern volatile unsigned char P5SEL; // Port function select register is 1 byte, hence "char" 
@@ -62,14 +62,14 @@ extern volatile unsigned char P5SEL; // Port function select register is 1 byte,
 */
 enum segment
 {
-    a   = 0x80,     //    aaaaa
-    b   = 0x40,     //  f       b
-    c   = 0x20,     //  f       b
-    d   = 0x01,     //    ggggg
-    e   = 0x02,     //  e       c
-    f   = 0x08,     //  e       c
-    g   = 0x04,     //    ddddd
-    dp  = 0x10      //          (dp)
+    a   = 0x01,     //    aaaaa
+    b   = 0x02,     //  f       b
+    c   = 0x04,     //  f       b
+    d   = 0x08,     //    ggggg
+    e   = 0x40,     //  e       c
+    f   = 0x10,     //  e       c
+    g   = 0x20,     //    ddddd
+    dp  = 0x80      //          (dp)
 };
 typedef enum segment SEGMENT, SEG;
 
@@ -127,14 +127,14 @@ enum mode
 };
 typedef enum mode MODE;
 
-const char R        = {e||g};           // Segment display pattern for: "r"     ; used for representing register mode
-const char X        = {b||c||e||f||g};  // Segment display pattern for: "X"     ; used for representing hex mode
+const char R        = {e|g};           // Segment display pattern for: "r"     ; used for representing register mode
+const char X        = {b|c|e|f|g};  // Segment display pattern for: "X"     ; used for representing hex mode
 const char MINUS    = {g};              // Segment display pattern for: "-"     ; used for representing signed values
 const char ERR[]    =                   // Segment display pattern for: "Err"   ; used for representign error mode
 {
-    a||d||e||f||g,
-    e||g,
-    e||g
+    a|d|e|f|g,
+    e|g,
+    e|g
 };
 
 /*
@@ -190,14 +190,14 @@ union LCD_DIG
     unsigned char reg;
     struct
     {
+        unsigned char a : 1;
+        unsigned char b : 1;
+        unsigned char c : 1;
         unsigned char d : 1;
         unsigned char e : 1;
-        unsigned char g : 1;
         unsigned char f : 1;
+        unsigned char g : 1;
         unsigned char h : 1;
-        unsigned char c : 1;
-        unsigned char b : 1;
-        unsigned char a : 1;
     } seg;
 };
 typedef union LCD_DIG LCD_DIG;
@@ -300,7 +300,7 @@ typedef union LCDAVCTL1_REG LCDAVCTL1_REG;
 bool m_all(bool val, LCD_MEM* mem)
 {
     if ( !mem 
-        ||(     (TOP < (unsigned char*)(mem->dig)) 
+        &&(     (TOP < (unsigned char*)(mem->dig))
         &&      (BASE > (unsigned char*)(mem->dig)) )
         )
         return false; // Invalid address
@@ -352,11 +352,11 @@ bool m_init(LCD_MEM* mem)
 */
 struct LCD
 {
-    volatile  LCDACTL_REG*        ctrl;
-    volatile  LCDAPCTL0_REG*      port0;
-    volatile  LCDAPCTL1_REG*      port1;
-    volatile  LCDAVCTL0_REG*      volt0;
-    volatile  LCDAVCTL1_REG*      volt1;
+    volatile LCDACTL_REG*        ctrl;
+    volatile LCDAPCTL0_REG*      port0;
+    volatile LCDAPCTL1_REG*      port1;
+    volatile LCDAVCTL0_REG*      volt0;
+    volatile LCDAVCTL1_REG*      volt1;
 
     LCD_MEM mems[MAX];
 } lcd;
@@ -396,8 +396,8 @@ bool lcd_freq(int f)
      return true;
 }
 
-bool lcd_mux(int m)
-{ return ( m>=1 && m<4 ) ? ( lcd.ctrl->flags.LCD_MXx = (m-1) )+m : false; };
+bool lcd_mux(unsigned int m)
+{ return ( m>=1 && m<=4 ) ? ( lcd.ctrl->flags.LCD_MXx = (m-1) )+m : false; };
 
 bool lcd_segsOn(bool t)
 { return lcd.ctrl->flags.LCD_SON = t; };
@@ -420,6 +420,8 @@ bool lcd_segPins(unsigned int pin, bool val, bool cascade)
     if ( pin > 39 )
         return false; // only 39 segments in total are available
 
+    lcd_segsOn(0);
+
     if ( pin >= 32 )
     {
         unsigned char flags = ( (pin/36) ? (2+cascade) : 1);
@@ -429,7 +431,7 @@ bool lcd_segPins(unsigned int pin, bool val, bool cascade)
             lcd.port1->reg &= ~flags;
 
         if (!cascade)
-            return true;
+            return lcd_segsOn(1);
         
         pin = 31;
     }
@@ -444,7 +446,7 @@ bool lcd_segPins(unsigned int pin, bool val, bool cascade)
     else
         lcd.port0->reg &= ~flags;
 
-    return true; 
+    return lcd_segsOn(1);
 }
 
 /*
@@ -460,17 +462,20 @@ bool lcd_all(bool val,
         return false;
 
     unsigned int i = start-1;
-    LCD_MEM* mems = lcd.mems;
 
+    LCD_MEM temp;
     while ( i < end )
-        if ( m_all(val, &(mems[i++])) == false) return false;
+    {
+        temp.dig = (LCD_DIG*)(BASE + i++);
+        if ( m_all( val, &temp ) == false ) return false;
+    }
 
     return true;
 }
 
 void lcd_init()
 {
-    if( lcd_all(0,1,15) == false)
+    if( lcd_all(0,1,MAX) == false)
         return;
 
     unsigned int i = 0;
@@ -492,16 +497,15 @@ void lcd_init()
     lcd_freq(128);
 
     // set MUX-mode to 4-Mux -the only supported memory scheme currently.
-    lcd_mux(3);
+    lcd_mux(4);
 
     lcd_segPins(39, 0, 1); // clear all pins
-    lcd_segPins(15, 1, 1); // set used pins
+    lcd_segPins(39, 1, 1); // set used pins
 
     // No charge pump used, set to default (no contrast controls enabled)
     lcd.volt0->reg = 0;
     lcd.volt1->reg = 0;
 
-    lcd_segsOn(1);
     lcd_on(1);
 }
 
@@ -551,8 +555,9 @@ bool write(const unsigned char* c, unsigned int len)
     if ( len > MAX || len <= 0 || c == NULL )
         return false;
     
+    lcd_segsOn(0);
+
     unsigned int index  = 0;
-    LCD_MEM* mems       = lcd.mems;
     while ( index < len )
     {
         unsigned int    cnum    = c[index];
@@ -569,6 +574,8 @@ bool write(const unsigned char* c, unsigned int len)
 
         index++;
     }
+
+    lcd_segsOn(1);
 
     return true;
 }
