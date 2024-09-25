@@ -19,5 +19,5 @@ the LCD frequency flag to "128" for its divider, selected due to each LCD frame 
 states driven by the COM0-3 planes, which require 2 CPU cycles each (ON/OFF). Thus, we need to run the LCD at 240 Hz,
 which we approximately achieve by dividing its clock, ACLK running @ 32kHz, with 128.
 
-Please note that this is a student project intended to experiment with lower-level embedded systems programming: use
-at your own discretion.
+Please note that this is a student project intended to experiment with embedded systems programming and re-inforce
+C programming techniques/style: use at your own discretion.
