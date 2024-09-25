@@ -23,10 +23,6 @@
 #ifndef LCD_H_
 #define LCD_H_
 
-#ifdef msp430f4617.h
-#include <msp430f4617.h>
-#endif
-
 #include <stdbool.h>
 
 #define NULL            0x0000
@@ -43,7 +39,7 @@ volatile unsigned char*   LCD_AVCTL0  = (unsigned char*)(0x00AE);  // LCD_A volt
 volatile unsigned char*   LCD_AVCTL1  = (unsigned char*)(0x00AF);  // LCD_A voltage 1's control register
 
 volatile unsigned char*   BASE        = (unsigned char*)(0x0091);  // Pointer to 1st memory address for LCD digits  (i.e. digit 1)
-volatile unsigned char*   MEMTOP      = (unsigned char*)(0x0098);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
+volatile unsigned char*   MEMTOP      = (unsigned char*)(0x009F);  // Pointer to 8th memory address for LCD digits  (i.e. digit 8/7.1/"ONES")
 volatile unsigned char*   TOP         = (unsigned char*)(0x00A4);  // Pointer to 20th memory address for LCD digits (i.e. digit 16)
 
 extern volatile unsigned char P5SEL; // Port function select register is 1 byte, hence "char" 
@@ -172,7 +168,7 @@ const unsigned char *numSegs(NUMBER num)
         a|e|f|g             // F = 15
     };
 
-    if ( num<0 || num>=16 )
+    if ( num>=16 )
         return NULL;
 
     return &( map[num] );
@@ -192,7 +188,7 @@ const unsigned char *numSegs(NUMBER num)
 union LCD_DIG
 {
     unsigned char reg;
-    struct segs
+    struct
     {
         unsigned char d : 1;
         unsigned char e : 1;
@@ -202,7 +198,7 @@ union LCD_DIG
         unsigned char c : 1;
         unsigned char b : 1;
         unsigned char a : 1;
-    };
+    } seg;
 };
 typedef union LCD_DIG LCD_DIG;
 
@@ -213,9 +209,6 @@ struct LCD_MEM
 {
     volatile LCD_DIG*     dig;
     unsigned int          id;
-
-    bool (*init)(LCD_MEM*)          = &m_init;
-    void (*all)(bool, LCD_MEM*)     = &m_all;
 };
 typedef struct LCD_MEM LCD_MEM;
 
@@ -302,6 +295,21 @@ typedef union LCDAVCTL1_REG LCDAVCTL1_REG;
 ////////////////////////////////////////////////////////////////////////////////
 
 /*
+    Asserts that all segments at a memory address are either set or cleared
+*/
+bool m_all(bool val, LCD_MEM* mem)
+{
+    if ( !mem 
+        ||(     (TOP < (unsigned char*)(mem->dig)) 
+        &&      (BASE > (unsigned char*)(mem->dig)) )
+        )
+        return false; // Invalid address
+
+    mem->dig->reg = val ? 0xFF : 0x00;
+    return true;
+}
+
+/*
     Maps the next available memory address for the LCD segment map to the parameterized pointer
 
     RETURNS:
@@ -331,17 +339,6 @@ bool m_init(LCD_MEM* mem)
 }
 
 /*
-    Asserts that all segments at a memory address are either set or cleared
-*/
-void m_all(bool val, LCD_MEM* mem)
-{
-    if ( !mem )
-        return; // Null pointer
-
-    mem->dig->reg |= val ? 0xFF : 0x00;
-}
-
-/*
     LCD CLASS
 
         Represents the integrated LCD for the MSP430, providing an instance for 
@@ -362,54 +359,7 @@ struct LCD
     volatile  LCDAVCTL1_REG*      volt1;
 
     LCD_MEM mems[MAX];
-
-    void (*init)(void)      = &lcd_init;
-    bool (*freq)(int)       = &lcd_freq;
-    bool (*mux)(int)        = &lcd_mux;
-    bool (*segsOn)(bool)    = &lcd_segsOn;
-    bool (*on)(bool)        = &lcd_on;
-    void (*all)(bool)       = &lcd_all;
-
-    bool (*write)(DIGIT, NUMBER)    = &rwrite;
 } lcd;
-
-void lcd_init()
-{
-    unsigned int i = 0;
-    LCD_MEM* mems = lcd.mems;
-    while ( i < MAX )
-    {
-        if ( m_init( &(mems[i]) ) == false ) break;
-
-        m_all( 0, &(mems[i]) );
-
-        i++;
-    }
-
-    if ( i < MAX ); // handle inability to allocate memory                                                      
-
-    lcd.ctrl    = (LCDACTL_REG*)(LCD_ACTL);
-    lcd.port0   = (LCDAPCTL0_REG*)(LCD_APCTL0);
-    lcd.port1   = (LCDAPCTL1_REG*)(LCD_APCTL1);
-    lcd.volt0   = (LCDAVCTL0_REG*)(LCD_AVCTL0);
-    lcd.volt1   = (LCDAVCTL1_REG*)(LCD_AVCTL1);                                                                                
-
-    lcd_freq(128);
-    lcd_mux(4);
-    P5SEL |= (0x10|0x08|0x04); // Enables the COM1-3 pins for driving the LCD (COM0 has a dedicated pin)
-
-    // Select MSP430 port pins to function as segment pins S0-15, representing the 8/7.1 digits
-    lcd.port0->flags.LCD_S0   = 1;
-    lcd.port0->flags.LCD_S4   = 1;
-    lcd.port0->flags.LCD_S8   = 1;
-    lcd.port0->flags.LCD_S12  = 1;
-
-    // No charge pump used, default everything everything
-    lcd.volt0->reg = 0;
-
-    lcd_segsOn(1);
-    lcd_on(1);
-}
 
 bool lcd_freq(int f)
 {
@@ -455,13 +405,104 @@ bool lcd_segsOn(bool t)
 bool lcd_on(bool t)
 { return lcd.ctrl->flags.LCD_ON = t; };
 
-void lcd_all(bool val)
+/*
+    Sets or clear pins to the segment groupings flags in Port 0 and 1's registers.
+    
+    Setting cascade to "false" allows for assignment to only those pins, without
+    disrupting the bit values of those around it; otherwise, "cascade"-ing a value
+    from a pin will preserve the upper pins while assigning the lower pins.
+
+    Ranged assignment is not currently supported though could be substituted with
+    individual assignments to pins selected of the range with cascade disabled. 
+*/
+bool lcd_segPins(unsigned int pin, bool val, bool cascade)
 {
-    unsigned int i = 0;
+    if ( pin > 39 )
+        return false; // only 39 segments in total are available
+
+    if ( pin >= 32 )
+    {
+        unsigned char flags = ( (pin/36) ? (2+cascade) : 1);
+        if (val)
+            lcd.port1->reg |= flags;
+        else
+            lcd.port1->reg &= ~flags;
+
+        if (!cascade)
+            return true;
+        
+        pin = 31;
+    }
+
+    pin /= 4;
+    unsigned char flags = 1;
+    while( pin-- )
+        flags = (flags<<1) + cascade;
+
+    if (val)
+        lcd.port0->reg |= flags;
+    else
+        lcd.port0->reg &= ~flags;
+
+    return true; 
+}
+
+/*
+    Writes a value to all digits [start,end]
+*/
+bool lcd_all(bool val,
+    unsigned int start, unsigned int end)
+{
+    if (
+              (unsigned int)(MEMTOP-BASE)+1 < start
+        ||    (unsigned int)(MEMTOP-BASE)+1 < end
+        )
+        return false;
+
+    unsigned int i = start-1;
     LCD_MEM* mems = lcd.mems;
 
+    while ( i < end )
+        if ( m_all(val, &(mems[i++])) == false) return false;
+
+    return true;
+}
+
+void lcd_init()
+{
+    if( lcd_all(0,1,15) == false)
+        return;
+
+    unsigned int i = 0;
+    LCD_MEM* mems = lcd.mems;
     while ( i < MAX )
-        m_all( val, &(mems[i]) ); i++;
+        if ( m_init( &(mems[i++]) ) == false ) break;
+
+    if ( i != MAX )
+        return; // handle inability to allocate memory                                                      
+
+    lcd.ctrl    = (LCDACTL_REG*)(LCD_ACTL);
+    lcd.port0   = (LCDAPCTL0_REG*)(LCD_APCTL0);
+    lcd.port1   = (LCDAPCTL1_REG*)(LCD_APCTL1);
+    lcd.volt0   = (LCDAVCTL0_REG*)(LCD_AVCTL0);
+    lcd.volt1   = (LCDAVCTL1_REG*)(LCD_AVCTL1);                                                                                
+    P5SEL |= (0x10|0x08|0x04); // Enables the COM1-3 pins for driving the LCD (COM0 has a dedicated pin)
+
+    // set LCD frequency with an appropriate divider for 30Hz FPS
+    lcd_freq(128);
+
+    // set MUX-mode to 4-Mux -the only supported memory scheme currently.
+    lcd_mux(3);
+
+    lcd_segPins(39, 0, 1); // clear all pins
+    lcd_segPins(15, 1, 1); // set used pins
+
+    // No charge pump used, set to default (no contrast controls enabled)
+    lcd.volt0->reg = 0;
+    lcd.volt1->reg = 0;
+
+    lcd_segsOn(1);
+    lcd_on(1);
 }
 
 /*
@@ -475,20 +516,17 @@ void lcd_all(bool val)
 */
 bool rwrite(DIGIT d, NUMBER n)
 {
-    if ( d == ONES )
-        return false; // The "8th"/"'1' in '7.1'" is currently not supported
+    if ( d > MAX )
+        return false; // Anything beyond 7 digits currently not support
 
     LCD_MEM* mems = lcd.mems;
 
-    mems[d-1].all( 0, &(mems[d-1]) );
+    m_all( 0, &(mems[d-1]) );
     if ( ( mems[d-1].dig->reg = *(numSegs(n)) ) == NULL )
         return false;
 
     return true;
 }
-
-// Aliased "rwrite" function instance; used to distinguish "write" variants from "rwrite"
-bool (*write)(DIGIT, NUMBER) = &rwrite;
 
 /*
     Writes a character array of MAX length to the LCD's 7 segments; represents a LITERAL print.
