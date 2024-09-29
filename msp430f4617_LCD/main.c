@@ -1,40 +1,55 @@
+#ifdef msp430.h
 #include <msp430.h>
+#endif 
 #include <lcd.h>
 
+#define RTC_FORM 	0x00
+#define RTC_HOLD 	0x40
+#define RTC_MODE 	0x10
+#define RTC_TEV		0x04
+#define RTC_IE		0x02
+#define RTC_FG		0x00
+
+extern RTCCTL, BTCNT1, BTCNT2;
+extern IE2_bit;
+
+extern WDTCTL, WDTPW, WDTHOLD;
+
 /**
- * main.c
+ * Seconds-based counting program to utilize the custom wrapper object for the integrated LCD
+ * in order to create an animated element for use in a presentation of the aforementioned wrapper.
+ * 
+ * Utilizes the RTC-counter functions, allowing for a total number of counts to (2^16)-1 max.
  */
 int main(void)
 {
 	WDTCTL = WDTPW | WDTHOLD;	// stop watchdog timer
 
-	/*
-		While not explicitly checked, this function MUST ABSOLUTELY
-		be invoked before any of the following functionality can be
-		used.
-
-		This function enables the on-board LCD for limited use of
-		the 7 segments in the 7.1 display region of unsigned
-		integers, represented in decimal or hex.
-
-		By default, it is set to 30Hz FPS at a 1/3 voltage bias.
-
-		NOTE: the wrapper is configured to support 4-MUX ONLY; any
-		attempt to configure to other modes will not be internally
-		supported.
-	*/
 	lcd_init();
+	lcd_all(1,1,15);
 
-	lcd_segsOn(0);
-	lcd_all(1,1,MAX);
-	lcd_segsOn(1);
+	RTCCTL = RTC_FORM|RTC_HOLD|RTC_MODE|RTC_TEV|RTC_IE|RTC_FG;
 
-	lcd_segsOn(0);
-	lcd_all(0,1,MAX);
-	rwrite( (DIGIT)3 , (NUMBER)5 );
-	lcd_segsOn(1);
+	BTCNT1 = 0;
+	BTCNT2 = 0;
 
-	write( "12345", 5 );
+	IE2_bit.BTIE 	= 1;
+	RTCCTL			&= ~RTC_HOLD;
+
+	for(;;)
+		#pragma __low_power_mode_3();
 
 	return 0;
+}
+
+#pragma vector = BASICTIMER_VECTOR 
+__interrupt void BASICTIMER_ISR (void) 
+{ 
+	unsigned int MSB, LSB;
+	MSB = BTCNT2;
+	MSB = MSB << 2;
+	LSB = BTCNT1;
+
+	writeNum( MSB+LSB ); 
+	
 }

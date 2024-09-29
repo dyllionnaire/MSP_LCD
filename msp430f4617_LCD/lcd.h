@@ -361,7 +361,7 @@ struct LCD
     LCD_MEM mems[MAX];
 } lcd;
 
-bool lcd_freq(int f)
+bool lcd_freq(unsigned int f)
 {
     volatile LCDACTL_REG* ctrl = lcd.ctrl;
     switch (f)
@@ -478,7 +478,7 @@ void lcd_init()
     if( lcd_all(0,1,MAX) == false)
         return;
 
-    unsigned int i = 0;
+    int i = 0;
     LCD_MEM* mems = lcd.mems;
     while ( i < MAX )
         if ( m_init( &(mems[i++]) ) == false ) break;
@@ -500,7 +500,7 @@ void lcd_init()
     lcd_mux(4);
 
     lcd_segPins(39, 0, 1); // clear all pins
-    lcd_segPins(39, 1, 1); // set used pins
+    lcd_segPins(15, 1, 1); // set used pins
 
     // No charge pump used, set to default (no contrast controls enabled)
     lcd.volt0->reg = 0;
@@ -557,7 +557,7 @@ bool write(const unsigned char* c, unsigned int len)
     
     lcd_segsOn(0);
 
-    unsigned int index  = 0;
+    int index  = 0;
     while ( index < len )
     {
         unsigned int    cnum    = c[index];
@@ -578,6 +578,44 @@ bool write(const unsigned char* c, unsigned int len)
     lcd_segsOn(1);
 
     return true;
+}
+
+/*
+    Prints the UNSIGNED integer value passed to it.
+
+    Technically, because the MSP430 holds "int" types as a word in value range,
+    the only range of expression by this function is max (2^16)-1 = 65,535; HOWEVER,
+    a 7-segment display can display a max value of 9,999,999.
+
+    Could make into an unsigned long, which would allow future refactoring into a
+    negative range without further adjustment due to numeral range (2^32 distinct vals)
+*/
+bool writeNum(unsigned int n)
+{
+    char c[MAX];
+
+    if ( n == 0 )
+        return write( '0', 1 );
+
+    int i = 0;
+    while ( i<MAX && n>0 )
+    {
+        int exp = 10, temp = i;
+        while ( temp-- ) exp *= 10;
+
+        temp = 0;
+        while (temp < i)
+        {
+            c[temp+1]  = c[temp];
+            temp++; // depending on evaluation, maybe can add postfix inc to rval temp above
+        }
+        c[i]    = ( (n % exp) / (exp/10) ) + 48;
+        n      -= (n % exp);
+
+        i++;
+    }
+
+    return write( c, i );
 }
 
 #endif /* LCD_H_ */
