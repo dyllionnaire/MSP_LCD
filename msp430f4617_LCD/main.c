@@ -1,19 +1,23 @@
-#ifdef msp430.h
 #include <msp430.h>
-#endif 
 #include <lcd.h>
 
-#define RTC_FORM 	0x00
-#define RTC_HOLD 	0x40
-#define RTC_MODE 	0x10
-#define RTC_TEV		0x04
-#define RTC_IE		0x02
-#define RTC_FG		0x00
+union RTC_CTL
+{
+	unsigned char reg;
+	struct
+	{
+		unsigned char RTC_FG 	: 1;
+		unsigned char RTC_IE 	: 1;
+		unsigned char RTC_TEVx 	: 1;
+		unsigned char RTC_MODEx : 1;
+		unsigned char RTC_HOLD 	: 1;
+		unsigned char RTC_BCD 	: 1;
+	} flags;
+}
+typedef union RTC_CTL RTC_CTL;
+volatile unsigned char* RTC_CTL_ADDR = (unsigned char*)(0x0041);	
 
-extern RTCCTL, BTCNT1, BTCNT2;
-extern IE2_bit;
-
-extern WDTCTL, WDTPW, WDTHOLD;
+unsigned int MINUTES = 0;
 
 /**
  * Seconds-based counting program to utilize the custom wrapper object for the integrated LCD
@@ -26,18 +30,23 @@ int main(void)
 	WDTCTL = WDTPW | WDTHOLD;	// stop watchdog timer
 
 	lcd_init();
-	lcd_all(1,1,15);
+	lcd_all(0,1,MAX);
 
-	RTCCTL = RTC_FORM|RTC_HOLD|RTC_MODE|RTC_TEV|RTC_IE|RTC_FG;
+	(RTC_CTL*) ctlr = (RTC_CTL*)(RTC_CTL_ADDR);
+	ctrl->RTC_HOLD	= 0;
 
-	BTCNT1 = 0;
-	BTCNT2 = 0;
+	ctrl->RTC_FG	= 0;
+	ctrl->RTC_IE	= 1;
+	ctrl->RTC_TEVx	= 0;
+	ctrl->RTC_MODEx	= 3;
+	ctrl->RTC_BCD	= 0;
 
-	IE2_bit.BTIE 	= 1;
-	RTCCTL			&= ~RTC_HOLD;
+	RTCNT1 = 0;
+	RTCNT2 = 0;
 
-	for(;;)
-		#pragma __low_power_mode_3();
+	ctrl->RTC_HOLD	= 1;
+	while(1)
+		writeNum( MINUTES + RTCNT1 );
 
 	return 0;
 }
@@ -45,11 +54,5 @@ int main(void)
 #pragma vector = BASICTIMER_VECTOR 
 __interrupt void BASICTIMER_ISR (void) 
 { 
-	unsigned int MSB, LSB;
-	MSB = BTCNT2;
-	MSB = MSB << 2;
-	LSB = BTCNT1;
-
-	writeNum( MSB+LSB ); 
-	
+	MINUTES = 60*RTCNT2;
 }

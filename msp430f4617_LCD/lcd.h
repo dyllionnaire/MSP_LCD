@@ -595,7 +595,10 @@ bool writeNum(unsigned int n)
     char c[MAX];
 
     if ( n == 0 )
-        return write( '0', 1 );
+    {
+        c[0] = '0';
+        return write( c, 1 );
+    }
 
     int i = 0;
     while ( i<MAX && n>0 )
@@ -603,13 +606,13 @@ bool writeNum(unsigned int n)
         int exp = 10, temp = i;
         while ( temp-- ) exp *= 10;
 
-        temp = 0;
-        while (temp < i)
+        temp = i;
+        while (temp > 0)
         {
-            c[temp+1]  = c[temp];
-            temp++; // depending on evaluation, maybe can add postfix inc to rval temp above
+            c[temp]  = c[temp-1];
+            temp--; // depending on evaluation, maybe can add postfix inc to rval temp above
         }
-        c[i]    = ( (n % exp) / (exp/10) ) + 48;
+        c[0]    = ( (n % exp) / (exp/10) ) + 48;
         n      -= (n % exp);
 
         i++;
