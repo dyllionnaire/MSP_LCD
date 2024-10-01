@@ -592,7 +592,7 @@ bool write(const unsigned char* c, unsigned int len)
 */
 bool writeNum(unsigned int n)
 {
-    char c[MAX];
+    unsigned char c[MAX];
 
     if ( n == 0 )
     {
