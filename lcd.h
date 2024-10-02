@@ -456,8 +456,8 @@ bool lcd_all(bool val,
     unsigned int start, unsigned int end)
 {
     if (
-              (unsigned int)(MEMTOP-BASE)+1 < start
-        ||    (unsigned int)(MEMTOP-BASE)+1 < end
+              (unsigned int)(TOP-BASE)+1 < start
+        ||    (unsigned int)(TOP-BASE)+1 < end
         )
         return false;
 
@@ -475,7 +475,8 @@ bool lcd_all(bool val,
 
 void lcd_init()
 {
-    if( lcd_all(0,1,MAX) == false)
+    // clears all values in allowable memory address; gone with junk data
+    if( lcd_all(0,1,(TOP-BASE)) == false)
         return;
 
     int i = 0;
@@ -500,7 +501,7 @@ void lcd_init()
     lcd_mux(4);
 
     lcd_segPins(39, 0, 1); // clear all pins
-    lcd_segPins(15, 1, 1); // set used pins
+    lcd_segPins(17, 1, 1); // set used pins
 
     // No charge pump used, set to default (no contrast controls enabled)
     lcd.volt0->reg = 0;
