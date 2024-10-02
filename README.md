@@ -7,12 +7,9 @@ In its current iteration, the only supported display characters are unsigned num
   
   HEX       = [A,F] + [a,f]
   
--and only for the first 7 digits (those corresponding to the 7.1 segment portion of the LCD). 
+-and only for the first 7 digits (those corresponding to the 7.1 segment portion of the LCD). Printing to the LCD is done through either a character array using write(), which the program interprets as a LITERAL interpretation of the text passed and does not currently support any form of code conversion, or an unsigned integer using the writeNum(); thus, the maximum printable values are 9,999,999 using write() and (2^16)-1 using writeNum(). 
 
-Additionally, the only display configuration currently supported for the four MUX modes is the 4-MUX; however, given 
-the precedent set by the LCDMEM register data type as a pointer to the known address with a bit field of the memory 
-scheme as its type and some type checking and appriopriate address allocation in m_init, the multimode arrangement 
-could be achieved.
+Additionally, the only display configuration currently supported for the four MUX modes available is the 4-MUX mode as well as no intrinsic support for driving peripheral displays -on the latter, though, some of the implemented features for manipulating the control registers may be useful still.
 
 The LCD will run, in its configuration as per the initialization function, at 30Hz for FPS. This is achieved by setting
 the LCD frequency flag to "128" for its divider, selected due to each LCD frame being composed of 4 display segment
